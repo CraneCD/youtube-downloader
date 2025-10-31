@@ -1,5 +1,5 @@
 import streamlit as st
-import yt_dlp
+from pytube import YouTube
 import os
 import tempfile
 import shutil
@@ -47,7 +47,7 @@ with st.sidebar:
         st.caption("MP3 conversion available")
     else:
         st.info("ℹ️ FFmpeg not found - app works without it!")
-        st.caption("Audio will download in original format (M4A/WebM)")
+        st.caption("Audio will download in original format (M4A)")
         with st.expander("📥 Optional: Install FFmpeg for MP3 conversion"):
             st.markdown("""
             **Windows:**
@@ -69,7 +69,7 @@ with st.sidebar:
             """)
     
     st.info(
-        "This app uses yt-dlp to download content from YouTube. "
+        "This app uses pytube to download content from YouTube. "
         "Please respect copyright and YouTube's terms of service."
     )
 
@@ -87,20 +87,24 @@ with col1:
         if url:
             try:
                 with st.spinner("Fetching video information..."):
-                    ydl_opts = {'quiet': True, 'no_warnings': True}
-                    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                        info = ydl.extract_info(url, download=False)
-                        
-                        st.success("✅ Video information retrieved!")
-                        st.json({
-                            "Title": info.get('title', 'N/A'),
-                            "Duration": f"{info.get('duration', 0) // 60}:{info.get('duration', 0) % 60:02d}",
-                            "Uploader": info.get('uploader', 'N/A'),
-                            "View Count": info.get('view_count', 0),
-                            "Upload Date": info.get('upload_date', 'N/A'),
-                        })
-                        
-                        st.session_state['video_info'] = info
+                    yt = YouTube(url)
+                    
+                    st.success("✅ Video information retrieved!")
+                    st.json({
+                        "Title": yt.title,
+                        "Duration": f"{yt.length // 60}:{yt.length % 60:02d}",
+                        "Channel": yt.author,
+                        "Views": yt.views,
+                        "Publish Date": yt.publish_date.strftime("%Y-%m-%d") if yt.publish_date else "N/A",
+                    })
+                    
+                    st.session_state['video_info'] = {
+                        'title': yt.title,
+                        'author': yt.author,
+                        'length': yt.length,
+                        'views': yt.views,
+                        'thumbnail': yt.thumbnail_url
+                    }
             except Exception as e:
                 st.error(f"❌ Error: {str(e)}")
         else:
@@ -113,212 +117,140 @@ with col2:
                 with st.spinner("Downloading..."):
                     # Create temporary directory for downloads
                     with tempfile.TemporaryDirectory() as tmpdir:
-                        # Configure yt-dlp options
-                        ydl_opts = {
-                            'outtmpl': os.path.join(tmpdir, '%(title)s.%(ext)s'),
-                            'quiet': False,
-                        }
+                        yt = YouTube(url)
+                        title = yt.title
+                        duration = yt.length
                         
                         if download_format == "Audio only":
-                            # Download best audio format available
+                            # Download audio stream
                             if has_ffmpeg:
-                                # With FFmpeg, we can convert to MP3
-                                ydl_opts.update({
-                                    'format': 'bestaudio/best',
-                                    'postprocessors': [{
-                                        'key': 'FFmpegExtractAudio',
-                                        'preferredcodec': 'mp3',
-                                        'preferredquality': '192',
-                                    }],
-                                })
-                            else:
-                                # Without FFmpeg, download in native format (m4a, webm, opus, etc.)
-                                ydl_opts.update({
-                                    'format': 'bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio/best',
-                                })
-                        else:
-                            # Video download options
-                            # If ffmpeg is not available, use single-file formats that don't require merging
-                            if not has_ffmpeg:
-                                # First, get format info to find formats with both video and audio
-                                ydl_info = yt_dlp.YoutubeDL({'quiet': True, 'no_warnings': True})
-                                with ydl_info:
-                                    try:
-                                        format_info = ydl_info.extract_info(url, download=False)
-                                        formats = format_info.get('formats', [])
-                                        
-                                        # Filter formats that have both video and audio codecs
-                                        complete_formats = []
-                                        for fmt in formats:
-                                            vcodec = fmt.get('vcodec', 'none')
-                                            acodec = fmt.get('acodec', 'none')
-                                            # Format must have both video and audio (not "none")
-                                            if vcodec != 'none' and acodec != 'none':
-                                                complete_formats.append(fmt)
-                                        
-                                        if complete_formats:
-                                            # Sort by quality and prefer MP4
-                                            complete_formats.sort(key=lambda x: (
-                                                x.get('ext') != 'mp4',  # Prefer mp4
-                                                -x.get('height', 0),   # Higher quality first
-                                                -x.get('fps', 0)        # Higher fps first
-                                            ))
-                                            
-                                            # Filter by quality if specified
-                                            if video_quality != "Best" and video_quality != "Worst":
-                                                target_height = int(video_quality.replace('p', ''))
-                                                complete_formats = [f for f in complete_formats 
-                                                                  if f.get('height', 0) <= target_height]
-                                                if complete_formats:
-                                                    # Get the best one
-                                                    selected_format = complete_formats[0]
-                                                    ydl_opts['format'] = str(selected_format['format_id'])
-                                                else:
-                                                    # Fallback to format codes
-                                                    quality_map = {
-                                                        "1080p": "22/18",
-                                                        "720p": "22/18",
-                                                        "480p": "135/18",
-                                                        "360p": "18",
-                                                    }
-                                                    ydl_opts['format'] = quality_map.get(video_quality, "18")
-                                            else:
-                                                # For "Best" or "Worst"
-                                                if video_quality == "Worst":
-                                                    complete_formats.reverse()
-                                                selected_format = complete_formats[0]
-                                                ydl_opts['format'] = str(selected_format['format_id'])
-                                        else:
-                                            # Fallback to known format codes that are complete
-                                            quality_map = {
-                                                "Best": "22/18/136/247/135/134/133",
-                                                "1080p": "247/136",
-                                                "720p": "22/247/136",
-                                                "480p": "135/18",
-                                                "360p": "18/134",
-                                                "Worst": "18",
-                                            }
-                                            ydl_opts['format'] = quality_map.get(video_quality, "18")
-                                    except:
-                                        # If format detection fails, use safe format codes
-                                        quality_map = {
-                                            "Best": "22/18",
-                                            "1080p": "22/18",
-                                            "720p": "22/18",
-                                            "480p": "18",
-                                            "360p": "18",
-                                            "Worst": "18",
-                                        }
-                                        ydl_opts['format'] = quality_map.get(video_quality, "18")
+                                # pytube doesn't directly support MP3, so we'll download M4A
+                                # Users can convert it themselves if needed
+                                audio_stream = yt.streams.filter(only_audio=True, file_extension='mp4').first()
+                                if not audio_stream:
+                                    audio_stream = yt.streams.filter(only_audio=True).first()
                                 
-                                # Ensure we don't try to merge or post-process
-                                ydl_opts['prefer_free_formats'] = False
-                                # Don't set merge_output_format when using single-file formats
+                                if audio_stream:
+                                    file_path = audio_stream.download(output_path=tmpdir, filename="audio")
+                                    
+                                    # Try to convert to MP3 using ffmpeg if available
+                                    import subprocess
+                                    mp3_path = os.path.join(tmpdir, "audio.mp3")
+                                    try:
+                                        subprocess.run([
+                                            'ffmpeg', '-i', file_path, '-vn', '-acodec', 'libmp3lame', 
+                                            '-ab', '192k', '-ar', '44100', '-y', mp3_path
+                                        ], check=True, capture_output=True)
+                                        file_path = mp3_path
+                                        extension = 'mp3'
+                                        mime_type = 'audio/mpeg'
+                                    except:
+                                        # If conversion fails, use original file
+                                        extension = audio_stream.subtype
+                                        mime_type = 'audio/mp4' if extension == 'm4a' else 'audio/webm'
+                                else:
+                                    st.error("❌ No audio stream found")
+                                    st.stop()
                             else:
-                                # With ffmpeg, we can merge best video + best audio
-                                quality_map = {
-                                    "Best": "bestvideo+bestaudio/best",
-                                    "1080p": "bestvideo[height<=1080]+bestaudio/best[height<=1080]",
-                                    "720p": "bestvideo[height<=720]+bestaudio/best[height<=720]",
-                                    "480p": "bestvideo[height<=480]+bestaudio/best[height<=480]",
-                                    "360p": "bestvideo[height<=360]+bestaudio/best[height<=360]",
-                                    "Worst": "worstvideo+worstaudio/worst",
-                                }
-                                ydl_opts['format'] = quality_map.get(video_quality, "bestvideo+bestaudio/best")
-                                ydl_opts['merge_output_format'] = 'mp4'
-                        
-                        # Download
-                        format_info_text = ""
-                        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                            info = ydl.extract_info(url, download=True)
-                            title = info.get('title', 'video')
-                            duration = info.get('duration', 0)
-                            
-                            # Get the format that was actually used
-                            format_id = info.get('format_id', 'unknown')
-                            format_ext = info.get('ext', 'unknown')
-                            vcodec = info.get('vcodec', 'unknown')
-                            acodec = info.get('acodec', 'unknown')
-                            
-                            # Store format info for display
-                            format_info_text = f"Format: {format_id}, Container: {format_ext}"
-                            if vcodec != 'unknown' and vcodec != 'none':
-                                format_info_text += f", Video: {vcodec.split('.')[0]}"
-                            if acodec != 'unknown' and acodec != 'none':
-                                format_info_text += f", Audio: {acodec.split('.')[0]}"
-                        
-                        # Find the downloaded file
-                        downloaded_files = list(Path(tmpdir).glob('*'))
-                        if downloaded_files:
-                            file_path = downloaded_files[0]
-                            
-                            # Read file
-                            with open(file_path, 'rb') as f:
-                                file_data = f.read()
-                            
-                            # Determine MIME type and extension from actual file
-                            file_ext = file_path.suffix.lower()
-                            if download_format == "Audio only":
-                                # Determine MIME type based on actual file extension
-                                audio_mime_map = {
-                                    '.mp3': 'audio/mpeg',
-                                    '.m4a': 'audio/mp4',
-                                    '.webm': 'audio/webm',
-                                    '.opus': 'audio/ogg',
-                                    '.ogg': 'audio/ogg',
-                                }
-                                mime_type = audio_mime_map.get(file_ext, 'audio/mpeg')
-                                extension = file_ext.lstrip('.') or 'mp3'
-                            else:
-                                # Video MIME type mapping
-                                video_mime_map = {
-                                    '.mp4': 'video/mp4',
-                                    '.webm': 'video/webm',
-                                    '.mkv': 'video/x-matroska',
-                                    '.flv': 'video/x-flv',
-                                }
-                                mime_type = video_mime_map.get(file_ext, 'video/mp4')
-                                extension = file_ext.lstrip('.') or 'mp4'
-                            
-                            # Provide download button
-                            if download_format == "Audio only":
-                                format_label = f"Audio ({extension.upper()})"
-                                if has_ffmpeg and extension == 'mp3':
-                                    format_label = "Audio (MP3)"
-                            else:
-                                format_label = "Video"
-                            
-                            st.success("✅ Download complete!")
-                            st.download_button(
-                                label=f"⬇️ Download {format_label}",
-                                data=file_data,
-                                file_name=f"{title[:50]}.{extension}",
-                                mime=mime_type,
-                                use_container_width=True
-                            )
-                            
-                            # Display video info
-                            st.info(f"📹 **Title:** {title}\n⏱️ **Duration:** {duration // 60}:{duration % 60:02d}")
-                            if format_info_text:
-                                st.caption(f"ℹ️ {format_info_text}")
+                                # Download M4A audio directly
+                                audio_stream = yt.streams.filter(only_audio=True, file_extension='mp4').first()
+                                if not audio_stream:
+                                    audio_stream = yt.streams.filter(only_audio=True).first()
+                                
+                                if audio_stream:
+                                    file_path = audio_stream.download(output_path=tmpdir, filename="audio")
+                                    extension = audio_stream.subtype
+                                    mime_type = 'audio/mp4' if extension == 'm4a' else 'audio/webm'
+                                else:
+                                    st.error("❌ No audio stream found")
+                                    st.stop()
                         else:
-                            st.error("❌ File not found after download")
+                            # Download video stream
+                            # pytube provides progressive streams (video + audio) and adaptive streams (separate)
+                            # We want progressive streams for complete files
+                            streams = yt.streams.filter(progressive=True, file_extension='mp4')
+                            
+                            if not streams:
+                                # Fallback to any progressive stream
+                                streams = yt.streams.filter(progressive=True)
+                            
+                            if not streams:
+                                st.error("❌ No complete video stream available. This video may require FFmpeg for merging.")
+                                st.info("💡 Try installing FFmpeg or selecting a different video.")
+                                st.stop()
+                            
+                            # Filter by quality
+                            selected_stream = None
+                            if video_quality == "Best":
+                                selected_stream = streams.get_highest_resolution()
+                            elif video_quality == "Worst":
+                                selected_stream = streams.get_lowest_resolution()
+                            else:
+                                target_height = int(video_quality.replace('p', ''))
+                                # Get streams at or below target resolution, sorted by resolution
+                                matching_streams = sorted(
+                                    [s for s in streams if s.resolution and int(s.resolution.replace('p', '')) <= target_height],
+                                    key=lambda s: int(s.resolution.replace('p', '')) if s.resolution else 0,
+                                    reverse=True
+                                )
+                                if matching_streams:
+                                    selected_stream = matching_streams[0]
+                                else:
+                                    selected_stream = streams.get_lowest_resolution()
+                            
+                            if not selected_stream:
+                                selected_stream = streams[0]
+                            
+                            file_path = selected_stream.download(output_path=tmpdir)
+                            extension = 'mp4'
+                            mime_type = 'video/mp4'
+                            format_info_text = f"Resolution: {selected_stream.resolution}, Format: {selected_stream.subtype}"
+                        
+                        # Read file
+                        with open(file_path, 'rb') as f:
+                            file_data = f.read()
+                        
+                        # Get file extension from actual file
+                        file_ext = Path(file_path).suffix.lower()
+                        if file_ext:
+                            extension = file_ext.lstrip('.')
+                            if extension == 'm4a':
+                                mime_type = 'audio/mp4'
+                            elif extension == 'mp4':
+                                if download_format == "Audio only":
+                                    mime_type = 'audio/mp4'
+                                else:
+                                    mime_type = 'video/mp4'
+                            elif extension == 'webm':
+                                mime_type = 'audio/webm' if download_format == "Audio only" else 'video/webm'
+                        
+                        # Provide download button
+                        if download_format == "Audio only":
+                            format_label = f"Audio ({extension.upper()})"
+                            if extension == 'mp3':
+                                format_label = "Audio (MP3)"
+                        else:
+                            format_label = "Video"
+                        
+                        st.success("✅ Download complete!")
+                        st.download_button(
+                            label=f"⬇️ Download {format_label}",
+                            data=file_data,
+                            file_name=f"{title[:50]}.{extension}",
+                            mime=mime_type,
+                            use_container_width=True
+                        )
+                        
+                        # Display video info
+                        st.info(f"📹 **Title:** {title}\n⏱️ **Duration:** {duration // 60}:{duration % 60:02d}")
+                        if 'format_info_text' in locals():
+                            st.caption(f"ℹ️ {format_info_text}")
                             
             except Exception as e:
                 error_msg = str(e)
                 st.error(f"❌ Error downloading: {error_msg}")
-                
-                # Provide helpful error messages for common issues
-                if "ffmpeg" in error_msg.lower() or "ffprobe" in error_msg.lower():
-                    st.warning("🔧 **An unexpected FFmpeg error occurred**")
-                    st.info("""
-                    The app should work without FFmpeg. If you're seeing this error:
-                    1. Make sure you're using the latest version of the app
-                    2. Try downloading again - it should automatically use formats that don't require FFmpeg
-                    3. Check the sidebar for optional FFmpeg installation (only needed for MP3 conversion)
-                    """)
-                else:
-                    st.info("💡 Tip: Make sure the URL is valid and the video is accessible")
+                st.info("💡 Tip: Make sure the URL is valid and the video is accessible")
+                st.exception(e)  # Show full error for debugging
         else:
             st.warning("⚠️ Please enter a YouTube URL")
 
@@ -327,9 +259,9 @@ if 'video_info' in st.session_state:
     with st.expander("📋 Last Retrieved Video Information"):
         info = st.session_state['video_info']
         st.write(f"**Title:** {info.get('title', 'N/A')}")
-        st.write(f"**Channel:** {info.get('uploader', 'N/A')}")
-        st.write(f"**Duration:** {info.get('duration', 0) // 60}:{info.get('duration', 0) % 60:02d}")
-        st.write(f"**Views:** {info.get('view_count', 0):,}")
+        st.write(f"**Channel:** {info.get('author', 'N/A')}")
+        st.write(f"**Duration:** {info.get('length', 0) // 60}:{info.get('length', 0) % 60:02d}")
+        st.write(f"**Views:** {info.get('views', 0):,}")
         if info.get('thumbnail'):
             st.image(info.get('thumbnail'))
 
@@ -337,7 +269,7 @@ if 'video_info' in st.session_state:
 st.markdown("---")
 st.markdown(
     "<div style='text-align: center; color: gray;'>"
-    "Made with ❤️ using Streamlit and yt-dlp"
+    "Made with ❤️ using Streamlit and pytube"
     "</div>",
     unsafe_allow_html=True
 )
