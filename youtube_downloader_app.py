@@ -65,6 +65,56 @@ with st.sidebar:
         st.error("⚠️ FFmpeg not found - REQUIRED for most videos!")
         st.caption("Modern YouTube videos need FFmpeg to merge video and audio streams")
         
+        # Add button to auto-install FFmpeg on Windows
+        import platform
+        if platform.system() == 'Windows':
+            if st.button("📥 Install FFmpeg (Windows)", type="primary", use_container_width=True):
+                import subprocess
+                with st.spinner("Installing FFmpeg via winget..."):
+                    try:
+                        # Try to install FFmpeg using winget
+                        result = subprocess.run(
+                            ['winget', 'install', 'ffmpeg', '--silent', '--accept-package-agreements', '--accept-source-agreements'],
+                            capture_output=True,
+                            text=True,
+                            timeout=300  # 5 minute timeout
+                        )
+                        
+                        if result.returncode == 0:
+                            st.success("✅ FFmpeg installation initiated!")
+                            st.info("""
+                            **Next steps:**
+                            1. The installation may require administrator privileges - check for UAC prompt
+                            2. Wait for installation to complete
+                            3. Restart this Streamlit app (Ctrl+C and run again)
+                            4. FFmpeg should be detected automatically
+                            """)
+                            st.warning("⚠️ **Important:** You must restart the Streamlit app after installation for FFmpeg to be detected!")
+                        else:
+                            st.error(f"❌ Installation failed: {result.stderr}")
+                            st.info("""
+                            **Troubleshooting:**
+                            - winget may require administrator privileges
+                            - Try running PowerShell as Administrator and run: `winget install ffmpeg`
+                            - Or use manual installation (see instructions below)
+                            """)
+                    except FileNotFoundError:
+                        st.error("❌ winget not found!")
+                        st.info("""
+                        **winget is not available on this system.**
+                        
+                        **Manual installation required:**
+                        1. Download from [ffmpeg.org/download.html](https://ffmpeg.org/download.html)
+                        2. Extract and add to PATH
+                        3. Restart the app
+                        """)
+                    except subprocess.TimeoutExpired:
+                        st.warning("⏳ Installation is taking longer than expected...")
+                        st.info("The installation may still be running. Check for UAC prompts or install manually.")
+                    except Exception as e:
+                        st.error(f"❌ Error: {str(e)}")
+                        st.info("Try manual installation instead (see instructions below).")
+        
         # Add a button to help diagnose
         if st.button("🔍 Check FFmpeg Installation", use_container_width=True):
             import platform
