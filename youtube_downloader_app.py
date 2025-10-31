@@ -140,18 +140,77 @@ with col2:
                             # Video download options
                             # If ffmpeg is not available, use single-file formats that don't require merging
                             if not has_ffmpeg:
-                                # Use format codes that YouTube provides as complete single-file downloads
-                                # These formats are already combined (video + audio in one file)
-                                # Format selector: prefer MP4, then WebM, fallback to any complete format
-                                quality_map = {
-                                    "Best": "best[ext=mp4]/best[ext=webm]/22/18/136/247/135/134/133",
-                                    "1080p": "best[height<=1080][ext=mp4]/best[height<=1080][ext=webm]/247[height<=1080]/136[height<=1080]",
-                                    "720p": "best[height<=720][ext=mp4]/best[height<=720][ext=webm]/22/247[height<=720]/136[height<=720]",
-                                    "480p": "best[height<=480][ext=mp4]/best[height<=480][ext=webm]/135[height<=480]",
-                                    "360p": "best[height<=360][ext=mp4]/best[height<=360][ext=webm]/18/134[height<=360]",
-                                    "Worst": "worst[ext=mp4]/worst[ext=webm]/worst",
-                                }
-                                ydl_opts['format'] = quality_map.get(video_quality, "best[ext=mp4]/22/18")
+                                # First, get format info to find formats with both video and audio
+                                ydl_info = yt_dlp.YoutubeDL({'quiet': True, 'no_warnings': True})
+                                with ydl_info:
+                                    try:
+                                        format_info = ydl_info.extract_info(url, download=False)
+                                        formats = format_info.get('formats', [])
+                                        
+                                        # Filter formats that have both video and audio codecs
+                                        complete_formats = []
+                                        for fmt in formats:
+                                            vcodec = fmt.get('vcodec', 'none')
+                                            acodec = fmt.get('acodec', 'none')
+                                            # Format must have both video and audio (not "none")
+                                            if vcodec != 'none' and acodec != 'none':
+                                                complete_formats.append(fmt)
+                                        
+                                        if complete_formats:
+                                            # Sort by quality and prefer MP4
+                                            complete_formats.sort(key=lambda x: (
+                                                x.get('ext') != 'mp4',  # Prefer mp4
+                                                -x.get('height', 0),   # Higher quality first
+                                                -x.get('fps', 0)        # Higher fps first
+                                            ))
+                                            
+                                            # Filter by quality if specified
+                                            if video_quality != "Best" and video_quality != "Worst":
+                                                target_height = int(video_quality.replace('p', ''))
+                                                complete_formats = [f for f in complete_formats 
+                                                                  if f.get('height', 0) <= target_height]
+                                                if complete_formats:
+                                                    # Get the best one
+                                                    selected_format = complete_formats[0]
+                                                    ydl_opts['format'] = str(selected_format['format_id'])
+                                                else:
+                                                    # Fallback to format codes
+                                                    quality_map = {
+                                                        "1080p": "22/18",
+                                                        "720p": "22/18",
+                                                        "480p": "135/18",
+                                                        "360p": "18",
+                                                    }
+                                                    ydl_opts['format'] = quality_map.get(video_quality, "18")
+                                            else:
+                                                # For "Best" or "Worst"
+                                                if video_quality == "Worst":
+                                                    complete_formats.reverse()
+                                                selected_format = complete_formats[0]
+                                                ydl_opts['format'] = str(selected_format['format_id'])
+                                        else:
+                                            # Fallback to known format codes that are complete
+                                            quality_map = {
+                                                "Best": "22/18/136/247/135/134/133",
+                                                "1080p": "247/136",
+                                                "720p": "22/247/136",
+                                                "480p": "135/18",
+                                                "360p": "18/134",
+                                                "Worst": "18",
+                                            }
+                                            ydl_opts['format'] = quality_map.get(video_quality, "18")
+                                    except:
+                                        # If format detection fails, use safe format codes
+                                        quality_map = {
+                                            "Best": "22/18",
+                                            "1080p": "22/18",
+                                            "720p": "22/18",
+                                            "480p": "18",
+                                            "360p": "18",
+                                            "Worst": "18",
+                                        }
+                                        ydl_opts['format'] = quality_map.get(video_quality, "18")
+                                
                                 # Ensure we don't try to merge or post-process
                                 ydl_opts['prefer_free_formats'] = False
                                 # Don't set merge_output_format when using single-file formats
@@ -169,10 +228,24 @@ with col2:
                                 ydl_opts['merge_output_format'] = 'mp4'
                         
                         # Download
+                        format_info_text = ""
                         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                             info = ydl.extract_info(url, download=True)
                             title = info.get('title', 'video')
                             duration = info.get('duration', 0)
+                            
+                            # Get the format that was actually used
+                            format_id = info.get('format_id', 'unknown')
+                            format_ext = info.get('ext', 'unknown')
+                            vcodec = info.get('vcodec', 'unknown')
+                            acodec = info.get('acodec', 'unknown')
+                            
+                            # Store format info for display
+                            format_info_text = f"Format: {format_id}, Container: {format_ext}"
+                            if vcodec != 'unknown' and vcodec != 'none':
+                                format_info_text += f", Video: {vcodec.split('.')[0]}"
+                            if acodec != 'unknown' and acodec != 'none':
+                                format_info_text += f", Audio: {acodec.split('.')[0]}"
                         
                         # Find the downloaded file
                         downloaded_files = list(Path(tmpdir).glob('*'))
@@ -226,6 +299,8 @@ with col2:
                             
                             # Display video info
                             st.info(f"📹 **Title:** {title}\n⏱️ **Duration:** {duration // 60}:{duration % 60:02d}")
+                            if format_info_text:
+                                st.caption(f"ℹ️ {format_info_text}")
                         else:
                             st.error("❌ File not found after download")
                             
