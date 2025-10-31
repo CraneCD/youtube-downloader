@@ -156,32 +156,34 @@ with col2:
                                                 complete_formats.append(fmt)
                                         
                                         if complete_formats:
-                                            # Filter to ONLY WebM formats
-                                            webm_formats = [f for f in complete_formats if f.get('ext', '').lower() == 'webm']
+                                            # Filter to ONLY MP4 formats (most compatible)
+                                            # Also prefer H.264 video codec for maximum compatibility
+                                            mp4_formats = [f for f in complete_formats if f.get('ext', '').lower() == 'mp4']
                                             
-                                            if not webm_formats:
-                                                st.error("❌ No WebM format available for this video.")
-                                                st.info("This video doesn't have a complete WebM format. Try a different video or install FFmpeg to merge streams.")
+                                            if not mp4_formats:
+                                                st.error("❌ No complete MP4 format available for this video.")
+                                                st.info("This video doesn't have a complete MP4 format. Try a different video or install FFmpeg to merge streams.")
                                                 st.stop()
                                             
-                                            # Sort by resolution
-                                            webm_formats.sort(key=lambda x: (
+                                            # Sort: prefer H.264 video codec (best compatibility), then by resolution
+                                            mp4_formats.sort(key=lambda x: (
+                                                'avc' not in x.get('vcodec', '').lower() and 'h264' not in x.get('vcodec', '').lower(),  # H.264 first
                                                 -x.get('height', 0) if x.get('height') else 0,  # Higher resolution first
                                             ))
                                             
                                             # Filter by quality if specified
                                             if video_quality not in ["Best", "Worst"]:
                                                 target_height = int(video_quality.replace('p', ''))
-                                                matching = [f for f in webm_formats 
+                                                matching = [f for f in mp4_formats 
                                                           if f.get('height') and int(str(f.get('height')).replace('p', '')) <= target_height]
                                                 if matching:
-                                                    webm_formats = matching
+                                                    mp4_formats = matching
                                             
                                             if video_quality == "Worst":
-                                                webm_formats.reverse()
+                                                mp4_formats.reverse()
                                             
                                             # Use the best matching format
-                                            selected = webm_formats[0]
+                                            selected = mp4_formats[0]
                                             ydl_opts['format'] = selected['format_id']
                                         else:
                                             # No complete formats available - this video needs FFmpeg
@@ -198,17 +200,18 @@ with col2:
                                             st.stop()
                                     except Exception as e:
                                         st.error(f"❌ Error checking formats: {str(e)}")
-                                        st.info("Trying WebM-only format selection...")
-                                        # Only WebM formats, no fallback
+                                        st.info("Trying MP4-only format selection...")
+                                        # Only MP4 formats with both video and audio (strict format selector)
+                                        # This format selector requires both vcodec and acodec to be present
                                         quality_map = {
-                                            "Best": "best[ext=webm]",
-                                            "1080p": "best[height<=1080][ext=webm]",
-                                            "720p": "best[height<=720][ext=webm]",
-                                            "480p": "best[height<=480][ext=webm]",
-                                            "360p": "best[height<=360][ext=webm]",
-                                            "Worst": "worst[ext=webm]",
+                                            "Best": "best[ext=mp4][vcodec*=avc][acodec*=mp4a]/best[ext=mp4][vcodec][acodec]",
+                                            "1080p": "best[height<=1080][ext=mp4][vcodec*=avc][acodec*=mp4a]/best[height<=1080][ext=mp4][vcodec][acodec]",
+                                            "720p": "best[height<=720][ext=mp4][vcodec*=avc][acodec*=mp4a]/best[height<=720][ext=mp4][vcodec][acodec]",
+                                            "480p": "best[height<=480][ext=mp4][vcodec*=avc][acodec*=mp4a]/best[height<=480][ext=mp4][vcodec][acodec]",
+                                            "360p": "best[height<=360][ext=mp4][vcodec*=avc][acodec*=mp4a]/best[height<=360][ext=mp4][vcodec][acodec]",
+                                            "Worst": "worst[ext=mp4][vcodec][acodec]",
                                         }
-                                        ydl_opts['format'] = quality_map.get(video_quality, "best[ext=webm]")
+                                        ydl_opts['format'] = quality_map.get(video_quality, "best[ext=mp4][vcodec][acodec]")
                                 
                                 ydl_opts['prefer_free_formats'] = False
                             else:
@@ -298,8 +301,8 @@ with col2:
                                     '.mkv': 'video/x-matroska',
                                     '.flv': 'video/x-flv',
                                 }
-                                mime_type = video_mime_map.get(file_ext, 'video/webm')
-                                extension = file_ext.lstrip('.') or 'webm'
+                                mime_type = video_mime_map.get(file_ext, 'video/mp4')
+                                extension = file_ext.lstrip('.') or 'mp4'
                             
                             # Provide download button
                             if download_format == "Audio only":
@@ -307,7 +310,7 @@ with col2:
                                 if has_ffmpeg and extension == 'mp3':
                                     format_label = "Audio (MP3)"
                             else:
-                                format_label = "Video (WebM)"
+                                format_label = "Video (MP4)"
                             
                             st.success("✅ Download complete!")
                             st.download_button(
@@ -347,10 +350,10 @@ with col2:
                     - macOS: `brew install ffmpeg`
                     - Linux: `sudo apt install ffmpeg`
                     """)
-                elif "format" in error_msg.lower() or "no video" in error_msg.lower() or "webm" in error_msg.lower():
-                    st.warning("⚠️ **No WebM format available**")
+                elif "format" in error_msg.lower() or "no video" in error_msg.lower() or "mp4" in error_msg.lower():
+                    st.warning("⚠️ **No complete MP4 format available**")
                     st.info("""
-                    This video doesn't have a complete WebM format available.
+                    This video doesn't have a complete MP4 format available.
                     Try a different video or install FFmpeg to merge video and audio streams.
                     """)
                 else:
