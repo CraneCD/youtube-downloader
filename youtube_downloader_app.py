@@ -140,16 +140,20 @@ with col2:
                             # Video download options
                             # If ffmpeg is not available, use single-file formats that don't require merging
                             if not has_ffmpeg:
-                                # Use formats that are already in a container (no merging needed)
+                                # Use format codes that YouTube provides as complete single-file downloads
+                                # These formats are already combined (video + audio in one file)
+                                # Format selector: prefer MP4, then WebM, fallback to any complete format
                                 quality_map = {
-                                    "Best": "best[ext=mp4]/best[ext=webm]/best",
-                                    "1080p": "best[height<=1080][ext=mp4]/best[height<=1080][ext=webm]/best[height<=1080]",
-                                    "720p": "best[height<=720][ext=mp4]/best[height<=720][ext=webm]/best[height<=720]",
-                                    "480p": "best[height<=480][ext=mp4]/best[height<=480][ext=webm]/best[height<=480]",
-                                    "360p": "best[height<=360][ext=mp4]/best[height<=360][ext=webm]/best[height<=360]",
+                                    "Best": "best[ext=mp4]/best[ext=webm]/22/18/136/247/135/134/133",
+                                    "1080p": "best[height<=1080][ext=mp4]/best[height<=1080][ext=webm]/247[height<=1080]/136[height<=1080]",
+                                    "720p": "best[height<=720][ext=mp4]/best[height<=720][ext=webm]/22/247[height<=720]/136[height<=720]",
+                                    "480p": "best[height<=480][ext=mp4]/best[height<=480][ext=webm]/135[height<=480]",
+                                    "360p": "best[height<=360][ext=mp4]/best[height<=360][ext=webm]/18/134[height<=360]",
                                     "Worst": "worst[ext=mp4]/worst[ext=webm]/worst",
                                 }
-                                ydl_opts['format'] = quality_map.get(video_quality, "best[ext=mp4]/best")
+                                ydl_opts['format'] = quality_map.get(video_quality, "best[ext=mp4]/22/18")
+                                # Ensure we don't try to merge or post-process
+                                ydl_opts['prefer_free_formats'] = False
                                 # Don't set merge_output_format when using single-file formats
                             else:
                                 # With ffmpeg, we can merge best video + best audio
@@ -193,7 +197,14 @@ with col2:
                                 mime_type = audio_mime_map.get(file_ext, 'audio/mpeg')
                                 extension = file_ext.lstrip('.') or 'mp3'
                             else:
-                                mime_type = "video/mp4"
+                                # Video MIME type mapping
+                                video_mime_map = {
+                                    '.mp4': 'video/mp4',
+                                    '.webm': 'video/webm',
+                                    '.mkv': 'video/x-matroska',
+                                    '.flv': 'video/x-flv',
+                                }
+                                mime_type = video_mime_map.get(file_ext, 'video/mp4')
                                 extension = file_ext.lstrip('.') or 'mp4'
                             
                             # Provide download button
