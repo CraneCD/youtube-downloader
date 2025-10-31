@@ -69,6 +69,16 @@ with st.sidebar:
         )
     
     st.markdown("---")
+    
+    # Network settings
+    with st.expander("🌐 Network Settings (Advanced)"):
+        retry_count = st.slider("Retry attempts on failure:", min_value=3, max_value=20, value=10, help="Number of times to retry if download fails")
+        timeout_seconds = st.slider("Connection timeout (seconds):", min_value=30, max_value=300, value=60, help="How long to wait for server response")
+        st.caption("Adjust these if you experience timeout errors or have slow internet")
+        st.session_state['retry_count'] = retry_count
+        st.session_state['timeout_seconds'] = timeout_seconds
+    
+    st.markdown("---")
     st.markdown("### ℹ️ About")
     
     # Show ffmpeg status
@@ -275,10 +285,25 @@ with col2:
                 with st.spinner("Downloading..."):
                     # Create temporary directory for downloads
                     with tempfile.TemporaryDirectory() as tmpdir:
-                        # Configure yt-dlp options
+                        # Get retry and timeout settings from session state or use defaults
+                        retry_count = st.session_state.get('retry_count', 10)
+                        timeout_seconds = st.session_state.get('timeout_seconds', 60)
+                        
+                        # Configure yt-dlp options with timeout and retry settings
                         ydl_opts = {
                             'outtmpl': os.path.join(tmpdir, '%(title)s.%(ext)s'),
                             'quiet': False,
+                            # Network timeout settings
+                            'socket_timeout': timeout_seconds,  # Socket timeout in seconds
+                            'retries': retry_count,  # Number of retries for downloads
+                            'fragment_retries': retry_count,  # Retries for fragments
+                            'file_access_retries': 3,  # Retries for file access
+                            # Download settings
+                            'external_downloader_args': {
+                                'default': [f'--timeout={timeout_seconds}', f'--retries={retry_count}']
+                            },
+                            # Progress hooks
+                            'noprogress': False,
                         }
                         
                         if download_format == "Audio only":
@@ -541,7 +566,22 @@ with col2:
                 st.error(f"❌ Error downloading: {error_msg}")
                 
                 # Provide helpful error messages for common issues
-                if "ffmpeg" in error_msg.lower() or "ffprobe" in error_msg.lower():
+                if "timeout" in error_msg.lower() or "timed out" in error_msg.lower():
+                    st.warning("⏱️ **Network Timeout Error**")
+                    st.info("""
+                    **The download timed out.** This can happen if:
+                    - Your internet connection is slow
+                    - YouTube servers are busy
+                    - The video file is very large
+                    
+                    **Solutions:**
+                    1. Try downloading again - network issues are often temporary
+                    2. Increase timeout in Network Settings (sidebar)
+                    3. Increase retry count in Network Settings
+                    4. Try downloading at a lower quality (720p or 480p)
+                    5. Check your internet connection
+                    """)
+                elif "ffmpeg" in error_msg.lower() or "ffprobe" in error_msg.lower():
                     st.warning("🔧 **FFmpeg error**")
                     st.info("""
                     FFmpeg is required for this video. Please install it:
@@ -555,8 +595,19 @@ with col2:
                     This video doesn't have a complete MP4 format available.
                     Try a different video or install FFmpeg to merge video and audio streams.
                     """)
+                elif "connection" in error_msg.lower() or "network" in error_msg.lower() or "httperror" in error_msg.lower():
+                    st.warning("🌐 **Network/Connection Error**")
+                    st.info("""
+                    **Connection problem detected.**
+                    
+                    **Try:**
+                    1. Check your internet connection
+                    2. Try again in a few moments
+                    3. Increase retry count in Network Settings (sidebar)
+                    4. Verify the YouTube URL is correct and accessible
+                    """)
                 else:
-                    st.info("💡 Tip: Make sure the URL is valid and the video is accessible")
+                    st.info("💡 Tip: Make sure the URL is valid and the video is accessible. If problems persist, try adjusting Network Settings in the sidebar.")
         else:
             st.warning("⚠️ Please enter a YouTube URL")
 
