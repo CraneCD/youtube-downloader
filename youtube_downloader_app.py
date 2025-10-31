@@ -3,6 +3,7 @@ import yt_dlp
 import os
 import tempfile
 import shutil
+import glob
 from pathlib import Path
 
 st.set_page_config(
@@ -24,6 +25,7 @@ def check_ffmpeg():
     # Also check common installation paths (for Windows)
     import platform
     if platform.system() == 'Windows':
+        # Check common fixed paths
         common_paths = [
             r'C:\ffmpeg\bin\ffmpeg.exe',
             r'C:\Program Files\ffmpeg\bin\ffmpeg.exe',
@@ -32,6 +34,18 @@ def check_ffmpeg():
         for path in common_paths:
             if os.path.exists(path):
                 return True
+        
+        # Check for any ffmpeg* directory in C:\ and Program Files
+        search_patterns = [
+            r'C:\ffmpeg*\bin\ffmpeg.exe',
+            r'C:\ffmpeg*\ffmpeg.exe',
+            r'C:\Program Files\ffmpeg*\bin\ffmpeg.exe',
+            r'C:\Program Files (x86)\ffmpeg*\bin\ffmpeg.exe',
+        ]
+        for pattern in search_patterns:
+            for path in glob.glob(pattern):
+                if os.path.exists(path):
+                    return True
     
     return False
 
@@ -68,7 +82,7 @@ with st.sidebar:
         # Add button to auto-install FFmpeg on Windows
         import platform
         if platform.system() == 'Windows':
-            if st.button("📥 Install FFmpeg (Windows)", type="primary", use_container_width=True):
+            if st.button("📥 Install FFmpeg (Windows)", type="primary", use_container_width=True, key="install_ffmpeg_btn"):
                 import subprocess
                 with st.spinner("Installing FFmpeg via winget..."):
                     try:
@@ -116,7 +130,7 @@ with st.sidebar:
                         st.info("Try manual installation instead (see instructions below).")
         
         # Add a button to help diagnose
-        if st.button("🔍 Check FFmpeg Installation", use_container_width=True):
+        if st.button("🔍 Check FFmpeg Installation", use_container_width=True, key="check_ffmpeg_btn"):
             import platform
             import subprocess
             st.write("**System Information:**")
@@ -134,25 +148,50 @@ with st.sidebar:
                     st.warning("FFmpeg found but couldn't execute - may need PATH update")
             else:
                 st.error("❌ FFmpeg not found in PATH")
-                st.info("""
-                **Troubleshooting:**
-                1. Install FFmpeg using the instructions below
-                2. Add FFmpeg to your system PATH
-                3. Restart your terminal/IDE
-                4. Restart the Streamlit app (Ctrl+C and run again)
-                """)
+                # Also check common paths
+                if platform.system() == 'Windows':
+                    found_paths = []
+                    search_patterns = [
+                        r'C:\ffmpeg*\bin\ffmpeg.exe',
+                        r'C:\ffmpeg*\ffmpeg.exe',
+                        r'C:\Program Files\ffmpeg*\bin\ffmpeg.exe',
+                        r'C:\Program Files (x86)\ffmpeg*\bin\ffmpeg.exe',
+                    ]
+                    for pattern in search_patterns:
+                        for path in glob.glob(pattern):
+                            if os.path.exists(path):
+                                found_paths.append(path)
+                    
+                    if found_paths:
+                        st.warning(f"⚠️ FFmpeg found but not in PATH:")
+                        for path in found_paths:
+                            st.write(f"  - {path}")
+                        st.info("Add FFmpeg to your PATH or restart the app - it should auto-detect now.")
+                    else:
+                        st.info("""
+                        **Troubleshooting:**
+                        1. Install FFmpeg using the instructions below
+                        2. Add FFmpeg to your system PATH
+                        3. Restart your terminal/IDE
+                        4. Restart the Streamlit app (Ctrl+C and run again)
+                        """)
         
         with st.expander("📥 CRITICAL: Install FFmpeg (Required)"):
             st.markdown("""
             ### Windows Installation:
             
-            **Method 1: Using winget (Recommended)**
+            **Method 1: Using the button above (Auto-install)**
+            - Click the "📥 Install FFmpeg (Windows)" button above
+            - Approve UAC prompt if asked
+            - Restart the app after installation
+            
+            **Method 2: Using winget (Recommended)**
             ```powershell
             winget install ffmpeg
             ```
             Then restart your terminal and Streamlit app.
             
-            **Method 2: Manual Installation**
+            **Method 3: Manual Installation**
             1. Download from [ffmpeg.org/download.html](https://ffmpeg.org/download.html)
             2. Choose "Windows builds from gyan.dev" or "Essentials build"
             3. Extract the ZIP file (e.g., to `C:\\ffmpeg`)
