@@ -17,7 +17,23 @@ st.markdown("Download videos or audio from YouTube")
 # Check for ffmpeg availability
 def check_ffmpeg():
     """Check if ffmpeg is available in the system PATH"""
-    return shutil.which('ffmpeg') is not None
+    ffmpeg_path = shutil.which('ffmpeg')
+    if ffmpeg_path:
+        return True
+    
+    # Also check common installation paths (for Windows)
+    import platform
+    if platform.system() == 'Windows':
+        common_paths = [
+            r'C:\ffmpeg\bin\ffmpeg.exe',
+            r'C:\Program Files\ffmpeg\bin\ffmpeg.exe',
+            r'C:\Program Files (x86)\ffmpeg\bin\ffmpeg.exe',
+        ]
+        for path in common_paths:
+            if os.path.exists(path):
+                return True
+    
+    return False
 
 has_ffmpeg = check_ffmpeg()
 
