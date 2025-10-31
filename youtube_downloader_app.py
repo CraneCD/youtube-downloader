@@ -64,24 +64,76 @@ with st.sidebar:
     else:
         st.error("⚠️ FFmpeg not found - REQUIRED for most videos!")
         st.caption("Modern YouTube videos need FFmpeg to merge video and audio streams")
+        
+        # Add a button to help diagnose
+        if st.button("🔍 Check FFmpeg Installation", use_container_width=True):
+            import platform
+            import subprocess
+            st.write("**System Information:**")
+            st.write(f"- OS: {platform.system()}")
+            st.write(f"- Python: {platform.python_version()}")
+            
+            # Try to find ffmpeg
+            ffmpeg_path = shutil.which('ffmpeg')
+            if ffmpeg_path:
+                st.success(f"✅ Found FFmpeg at: {ffmpeg_path}")
+                try:
+                    result = subprocess.run(['ffmpeg', '-version'], capture_output=True, text=True, timeout=5)
+                    st.code(result.stdout.split('\n')[0])
+                except:
+                    st.warning("FFmpeg found but couldn't execute - may need PATH update")
+            else:
+                st.error("❌ FFmpeg not found in PATH")
+                st.info("""
+                **Troubleshooting:**
+                1. Install FFmpeg using the instructions below
+                2. Add FFmpeg to your system PATH
+                3. Restart your terminal/IDE
+                4. Restart the Streamlit app (Ctrl+C and run again)
+                """)
+        
         with st.expander("📥 CRITICAL: Install FFmpeg (Required)"):
             st.markdown("""
-            **Windows:**
-            1. Download from [ffmpeg.org](https://ffmpeg.org/download.html)
-            2. Extract and add to PATH
-            3. Or use: `winget install ffmpeg`
+            ### Windows Installation:
             
-            **macOS:**
+            **Method 1: Using winget (Recommended)**
+            ```powershell
+            winget install ffmpeg
+            ```
+            Then restart your terminal and Streamlit app.
+            
+            **Method 2: Manual Installation**
+            1. Download from [ffmpeg.org/download.html](https://ffmpeg.org/download.html)
+            2. Choose "Windows builds from gyan.dev" or "Essentials build"
+            3. Extract the ZIP file (e.g., to `C:\\ffmpeg`)
+            4. Add to PATH:
+               - Press `Win + X` → System → Advanced System Settings
+               - Click "Environment Variables"
+               - Under "System Variables", find "Path" and click "Edit"
+               - Click "New" and add: `C:\\ffmpeg\\bin` (or wherever you extracted it)
+               - Click OK on all dialogs
+            5. Restart your terminal/IDE
+            6. Verify: Open new terminal and run `ffmpeg -version`
+            
+            ### macOS Installation:
             ```bash
             brew install ffmpeg
             ```
             
-            **Linux:**
+            ### Linux Installation:
             ```bash
+            sudo apt update
             sudo apt install ffmpeg
             ```
             
-            **Note:** Most modern YouTube videos use adaptive streaming (DASH) which requires FFmpeg to merge video and audio streams into playable files.
+            ### After Installation:
+            1. Close and restart your terminal/command prompt
+            2. Verify: Run `ffmpeg -version` in a new terminal
+            3. Restart this Streamlit app (stop with Ctrl+C, then run again)
+            
+            **Note:** If FFmpeg still isn't detected after installation, the PATH may not be updated. Try restarting your computer.
+            
+            **For Streamlit Cloud:** The Dockerfile in the repo will install FFmpeg automatically.
             """)
     
     st.info(
