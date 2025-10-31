@@ -2,6 +2,7 @@ import streamlit as st
 import yt_dlp
 import os
 import tempfile
+import shutil
 from pathlib import Path
 
 st.set_page_config(
@@ -12,6 +13,13 @@ st.set_page_config(
 
 st.title("📥 YouTube Downloader")
 st.markdown("Download videos or audio from YouTube")
+
+# Check for ffmpeg availability
+def check_ffmpeg():
+    """Check if ffmpeg is available in the system PATH"""
+    return shutil.which('ffmpeg') is not None
+
+has_ffmpeg = check_ffmpeg()
 
 # Sidebar for settings
 with st.sidebar:
@@ -32,6 +40,32 @@ with st.sidebar:
     
     st.markdown("---")
     st.markdown("### ℹ️ About")
+    
+    # Show ffmpeg status
+    if has_ffmpeg:
+        st.success("✅ FFmpeg is installed")
+    else:
+        st.warning("⚠️ FFmpeg not found")
+        with st.expander("📥 How to install FFmpeg"):
+            st.markdown("""
+            **Windows:**
+            1. Download from [ffmpeg.org](https://ffmpeg.org/download.html)
+            2. Extract and add to PATH
+            3. Or use: `winget install ffmpeg`
+            
+            **macOS:**
+            ```bash
+            brew install ffmpeg
+            ```
+            
+            **Linux:**
+            ```bash
+            sudo apt install ffmpeg
+            ```
+            
+            Note: Audio downloads (MP3) require FFmpeg.
+            """)
+    
     st.info(
         "This app uses yt-dlp to download content from YouTube. "
         "Please respect copyright and YouTube's terms of service."
@@ -94,16 +128,31 @@ with col2:
                             })
                         else:
                             # Video download options
-                            quality_map = {
-                                "Best": "bestvideo+bestaudio/best",
-                                "1080p": "bestvideo[height<=1080]+bestaudio/best[height<=1080]",
-                                "720p": "bestvideo[height<=720]+bestaudio/best[height<=720]",
-                                "480p": "bestvideo[height<=480]+bestaudio/best[height<=480]",
-                                "360p": "bestvideo[height<=360]+bestaudio/best[height<=360]",
-                                "Worst": "worstvideo+worstaudio/worst",
-                            }
-                            ydl_opts['format'] = quality_map.get(video_quality, "bestvideo+bestaudio/best")
-                            ydl_opts['merge_output_format'] = 'mp4'
+                            # If ffmpeg is not available, use single-file formats that don't require merging
+                            if not has_ffmpeg:
+                                # Use formats that are already in a container (no merging needed)
+                                quality_map = {
+                                    "Best": "best[ext=mp4]/best[ext=webm]/best",
+                                    "1080p": "best[height<=1080][ext=mp4]/best[height<=1080][ext=webm]/best[height<=1080]",
+                                    "720p": "best[height<=720][ext=mp4]/best[height<=720][ext=webm]/best[height<=720]",
+                                    "480p": "best[height<=480][ext=mp4]/best[height<=480][ext=webm]/best[height<=480]",
+                                    "360p": "best[height<=360][ext=mp4]/best[height<=360][ext=webm]/best[height<=360]",
+                                    "Worst": "worst[ext=mp4]/worst[ext=webm]/worst",
+                                }
+                                ydl_opts['format'] = quality_map.get(video_quality, "best[ext=mp4]/best")
+                                # Don't set merge_output_format when using single-file formats
+                            else:
+                                # With ffmpeg, we can merge best video + best audio
+                                quality_map = {
+                                    "Best": "bestvideo+bestaudio/best",
+                                    "1080p": "bestvideo[height<=1080]+bestaudio/best[height<=1080]",
+                                    "720p": "bestvideo[height<=720]+bestaudio/best[height<=720]",
+                                    "480p": "bestvideo[height<=480]+bestaudio/best[height<=480]",
+                                    "360p": "bestvideo[height<=360]+bestaudio/best[height<=360]",
+                                    "Worst": "worstvideo+worstaudio/worst",
+                                }
+                                ydl_opts['format'] = quality_map.get(video_quality, "bestvideo+bestaudio/best")
+                                ydl_opts['merge_output_format'] = 'mp4'
                         
                         # Download
                         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -144,8 +193,30 @@ with col2:
                             st.error("❌ File not found after download")
                             
             except Exception as e:
-                st.error(f"❌ Error downloading: {str(e)}")
-                st.info("💡 Tip: Make sure the URL is valid and the video is accessible")
+                error_msg = str(e)
+                st.error(f"❌ Error downloading: {error_msg}")
+                
+                # Provide helpful error messages for common issues
+                if "ffmpeg" in error_msg.lower() or "ffprobe" in error_msg.lower():
+                    st.warning("🔧 **FFmpeg is required for this download**")
+                    if download_format == "Audio only (MP3)":
+                        st.info("""
+                        **To fix this:**
+                        1. Install FFmpeg on your system
+                        2. Add FFmpeg to your system PATH
+                        3. Restart the Streamlit app
+                        
+                        See the sidebar for installation instructions.
+                        """)
+                    else:
+                        st.info("""
+                        **To fix this:**
+                        1. Install FFmpeg for better quality options
+                        2. Or the app will try to download in formats that don't require FFmpeg
+                        3. Check the sidebar for installation instructions
+                        """)
+                else:
+                    st.info("💡 Tip: Make sure the URL is valid and the video is accessible")
         else:
             st.warning("⚠️ Please enter a YouTube URL")
 
