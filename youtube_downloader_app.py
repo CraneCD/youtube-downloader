@@ -156,25 +156,32 @@ with col2:
                                                 complete_formats.append(fmt)
                                         
                                         if complete_formats:
-                                            # Sort: prefer WebM over MP4, then by resolution
-                                            complete_formats.sort(key=lambda x: (
-                                                x.get('ext', '') == 'mp4',  # MP4 last (WebM first)
+                                            # Filter to ONLY WebM formats
+                                            webm_formats = [f for f in complete_formats if f.get('ext', '').lower() == 'webm']
+                                            
+                                            if not webm_formats:
+                                                st.error("❌ No WebM format available for this video.")
+                                                st.info("This video doesn't have a complete WebM format. Try a different video or install FFmpeg to merge streams.")
+                                                st.stop()
+                                            
+                                            # Sort by resolution
+                                            webm_formats.sort(key=lambda x: (
                                                 -x.get('height', 0) if x.get('height') else 0,  # Higher resolution first
                                             ))
                                             
                                             # Filter by quality if specified
                                             if video_quality not in ["Best", "Worst"]:
                                                 target_height = int(video_quality.replace('p', ''))
-                                                matching = [f for f in complete_formats 
+                                                matching = [f for f in webm_formats 
                                                           if f.get('height') and int(str(f.get('height')).replace('p', '')) <= target_height]
                                                 if matching:
-                                                    complete_formats = matching
+                                                    webm_formats = matching
                                             
                                             if video_quality == "Worst":
-                                                complete_formats.reverse()
+                                                webm_formats.reverse()
                                             
                                             # Use the best matching format
-                                            selected = complete_formats[0]
+                                            selected = webm_formats[0]
                                             ydl_opts['format'] = selected['format_id']
                                         else:
                                             # No complete formats available - this video needs FFmpeg
@@ -190,18 +197,18 @@ with col2:
                                             """)
                                             st.stop()
                                     except Exception as e:
-                                        st.warning(f"⚠️ Error checking formats: {str(e)}")
-                                        st.info("Using fallback format selection...")
-                                        # Fallback: try simple format selector (prefer WebM)
+                                        st.error(f"❌ Error checking formats: {str(e)}")
+                                        st.info("Trying WebM-only format selection...")
+                                        # Only WebM formats, no fallback
                                         quality_map = {
-                                            "Best": "best[ext=webm]/best[ext=mp4]/best",
-                                            "1080p": "best[height<=1080][ext=webm]/best[height<=1080][ext=mp4]/best[height<=1080]",
-                                            "720p": "best[height<=720][ext=webm]/best[height<=720][ext=mp4]/best[height<=720]",
-                                            "480p": "best[height<=480][ext=webm]/best[height<=480][ext=mp4]/best[height<=480]",
-                                            "360p": "best[height<=360][ext=webm]/best[height<=360][ext=mp4]/best[height<=360]",
-                                            "Worst": "worst[ext=webm]/worst[ext=mp4]/worst",
+                                            "Best": "best[ext=webm]",
+                                            "1080p": "best[height<=1080][ext=webm]",
+                                            "720p": "best[height<=720][ext=webm]",
+                                            "480p": "best[height<=480][ext=webm]",
+                                            "360p": "best[height<=360][ext=webm]",
+                                            "Worst": "worst[ext=webm]",
                                         }
-                                        ydl_opts['format'] = quality_map.get(video_quality, "best[ext=webm]/best[ext=mp4]")
+                                        ydl_opts['format'] = quality_map.get(video_quality, "best[ext=webm]")
                                 
                                 ydl_opts['prefer_free_formats'] = False
                             else:
@@ -291,8 +298,8 @@ with col2:
                                     '.mkv': 'video/x-matroska',
                                     '.flv': 'video/x-flv',
                                 }
-                                mime_type = video_mime_map.get(file_ext, 'video/mp4')
-                                extension = file_ext.lstrip('.') or 'mp4'
+                                mime_type = video_mime_map.get(file_ext, 'video/webm')
+                                extension = file_ext.lstrip('.') or 'webm'
                             
                             # Provide download button
                             if download_format == "Audio only":
@@ -300,7 +307,7 @@ with col2:
                                 if has_ffmpeg and extension == 'mp3':
                                     format_label = "Audio (MP3)"
                             else:
-                                format_label = "Video"
+                                format_label = "Video (WebM)"
                             
                             st.success("✅ Download complete!")
                             st.download_button(
@@ -340,11 +347,11 @@ with col2:
                     - macOS: `brew install ffmpeg`
                     - Linux: `sudo apt install ffmpeg`
                     """)
-                elif "format" in error_msg.lower() or "no video" in error_msg.lower():
-                    st.warning("⚠️ **Format selection error**")
+                elif "format" in error_msg.lower() or "no video" in error_msg.lower() or "webm" in error_msg.lower():
+                    st.warning("⚠️ **No WebM format available**")
                     st.info("""
-                    This video may not have a format that works without FFmpeg.
-                    Try installing FFmpeg or selecting a different video.
+                    This video doesn't have a complete WebM format available.
+                    Try a different video or install FFmpeg to merge video and audio streams.
                     """)
                 else:
                     st.info("💡 Tip: Make sure the URL is valid and the video is accessible")
