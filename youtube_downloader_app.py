@@ -156,9 +156,9 @@ with col2:
                                                 complete_formats.append(fmt)
                                         
                                         if complete_formats:
-                                            # Sort: prefer MP4, then by resolution
+                                            # Sort: prefer WebM over MP4, then by resolution
                                             complete_formats.sort(key=lambda x: (
-                                                x.get('ext', '') != 'mp4',  # MP4 first
+                                                x.get('ext', '') == 'mp4',  # MP4 last (WebM first)
                                                 -x.get('height', 0) if x.get('height') else 0,  # Higher resolution first
                                             ))
                                             
@@ -192,16 +192,16 @@ with col2:
                                     except Exception as e:
                                         st.warning(f"⚠️ Error checking formats: {str(e)}")
                                         st.info("Using fallback format selection...")
-                                        # Fallback: try simple format selector
+                                        # Fallback: try simple format selector (prefer WebM)
                                         quality_map = {
-                                            "Best": "best[ext=mp4]/best",
-                                            "1080p": "best[height<=1080][ext=mp4]/best[height<=1080]",
-                                            "720p": "best[height<=720][ext=mp4]/best[height<=720]",
-                                            "480p": "best[height<=480][ext=mp4]/best[height<=480]",
-                                            "360p": "best[height<=360][ext=mp4]/best[height<=360]",
-                                            "Worst": "worst[ext=mp4]/worst",
+                                            "Best": "best[ext=webm]/best[ext=mp4]/best",
+                                            "1080p": "best[height<=1080][ext=webm]/best[height<=1080][ext=mp4]/best[height<=1080]",
+                                            "720p": "best[height<=720][ext=webm]/best[height<=720][ext=mp4]/best[height<=720]",
+                                            "480p": "best[height<=480][ext=webm]/best[height<=480][ext=mp4]/best[height<=480]",
+                                            "360p": "best[height<=360][ext=webm]/best[height<=360][ext=mp4]/best[height<=360]",
+                                            "Worst": "worst[ext=webm]/worst[ext=mp4]/worst",
                                         }
-                                        ydl_opts['format'] = quality_map.get(video_quality, "best[ext=mp4]")
+                                        ydl_opts['format'] = quality_map.get(video_quality, "best[ext=webm]/best[ext=mp4]")
                                 
                                 ydl_opts['prefer_free_formats'] = False
                             else:
