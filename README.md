@@ -109,35 +109,60 @@ If port 8501 is busy, Streamlit will use the next available port (8502, 8503, et
 
 ### Streamlit Cloud Deployment
 
-**Important:** Streamlit Cloud has limitations with FFmpeg:
+**FFmpeg is REQUIRED for most videos to work correctly on Streamlit Cloud!**
 
-1. **FFmpeg is NOT pre-installed** on Streamlit Cloud
-2. You have two options:
+#### Option 1: Using `packages.txt` (Easiest - Recommended)
 
-   **Option A: Use without FFmpeg** (Limited)
-   - App will work but many videos won't download as complete files
-   - Only videos with existing complete formats will work
-   - Audio downloads will be in original format (not MP3)
+1. **The `packages.txt` file is already in the repo** - it lists FFmpeg as a system dependency
+2. When deploying to Streamlit Cloud:
+   - Go to [share.streamlit.io](https://share.streamlit.io)
+   - Connect your GitHub repository
+   - Streamlit Cloud will automatically detect `packages.txt` and install FFmpeg
+   - Deploy!
 
-   **Option B: Use Dockerfile** (Recommended for FFmpeg support)
-   - Create a `Dockerfile` in your repo root:
-   ```dockerfile
-   FROM python:3.11-slim
+That's it! Streamlit Cloud will install FFmpeg automatically from `packages.txt`.
 
-   RUN apt-get update && apt-get install -y \
-       ffmpeg \
-       && rm -rf /var/lib/apt/lists/*
+#### Option 2: Using Dockerfile (Alternative)
 
-   WORKDIR /app
-   COPY requirements.txt .
-   RUN pip install -r requirements.txt
+If `packages.txt` doesn't work, the repo also includes a `Dockerfile` that installs FFmpeg:
 
-   COPY . .
+```dockerfile
+FROM python:3.11-slim
 
-   CMD ["streamlit", "run", "youtube_downloader_app.py", "--server.port=8501", "--server.address=0.0.0.0"]
-   ```
-   
-   - Streamlit Cloud will use this Dockerfile and FFmpeg will be available
+RUN apt-get update && apt-get install -y \
+    ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+COPY requirements.txt .
+RUN pip install -r requirements.txt
+
+COPY . .
+
+CMD ["streamlit", "run", "youtube_downloader_app.py", "--server.port=8501", "--server.address=0.0.0.0"]
+```
+
+**To use the Dockerfile:**
+1. In Streamlit Cloud deployment settings, enable "Advanced settings"
+2. Select "Use Dockerfile" instead of standard deployment
+3. Streamlit Cloud will build using the Dockerfile and FFmpeg will be available
+
+#### Verifying FFmpeg Installation on Streamlit Cloud
+
+After deployment, the app will automatically check for FFmpeg. You should see:
+- ✅ "FFmpeg is installed" in the sidebar
+- Videos will download and play correctly
+- Audio can be converted to MP3
+
+#### Troubleshooting Streamlit Cloud
+
+**If FFmpeg still isn't detected:**
+1. Check the deployment logs in Streamlit Cloud
+2. Make sure `packages.txt` is in the root of your repo (it should be)
+3. Try using the Dockerfile option instead
+4. Restart the app after deployment
+
+**Note:** Without FFmpeg on Streamlit Cloud, most modern YouTube videos won't download correctly because they use DASH streaming (separate video/audio streams that need merging).
 
 ## Usage
 
