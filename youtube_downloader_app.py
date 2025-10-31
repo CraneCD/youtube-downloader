@@ -81,8 +81,13 @@ with st.sidebar:
         
         # Add button to auto-install FFmpeg on Windows
         import platform
-        if platform.system() == 'Windows':
-            if st.button("📥 Install FFmpeg (Windows)", type="primary", use_container_width=True, key="install_ffmpeg_btn"):
+        current_os = platform.system()
+        
+        if current_os == 'Windows':
+            st.markdown("---")
+            st.markdown("### 📥 Auto-Install FFmpeg")
+            install_clicked = st.button("🚀 Install FFmpeg Automatically (Windows)", type="primary", use_container_width=True, key="install_ffmpeg_btn")
+            if install_clicked:
                 import subprocess
                 with st.spinner("Installing FFmpeg via winget..."):
                     try:
