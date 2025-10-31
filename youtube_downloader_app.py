@@ -44,11 +44,11 @@ with st.sidebar:
     # Show ffmpeg status
     if has_ffmpeg:
         st.success("✅ FFmpeg is installed")
-        st.caption("MP3 conversion & video merging available")
+        st.caption("MP3 conversion available")
     else:
-        st.warning("⚠️ FFmpeg not found")
-        st.caption("Some videos require FFmpeg to merge streams")
-        with st.expander("📥 Install FFmpeg for full compatibility"):
+        st.error("⚠️ FFmpeg not found - REQUIRED for most videos!")
+        st.caption("Modern YouTube videos need FFmpeg to merge video and audio streams")
+        with st.expander("📥 CRITICAL: Install FFmpeg (Required)"):
             st.markdown("""
             **Windows:**
             1. Download from [ffmpeg.org](https://ffmpeg.org/download.html)
@@ -65,7 +65,7 @@ with st.sidebar:
             sudo apt install ffmpeg
             ```
             
-            Note: Many modern YouTube videos require FFmpeg to merge video and audio streams.
+            **Note:** Most modern YouTube videos use adaptive streaming (DASH) which requires FFmpeg to merge video and audio streams into playable files.
             """)
     
     st.info(
@@ -147,12 +147,20 @@ with col2:
                                         formats = format_info.get('formats', [])
                                         
                                         # Find formats that have BOTH video and audio codecs (complete files)
+                                        # Use format_note to identify progressive/complete streams
                                         complete_formats = []
                                         for fmt in formats:
                                             vcodec = fmt.get('vcodec', 'none')
                                             acodec = fmt.get('acodec', 'none')
+                                            format_note = fmt.get('format_note', '').lower()
+                                            protocol = fmt.get('protocol', '').lower()
                                             # Must have both video AND audio (not "none")
-                                            if vcodec and vcodec != 'none' and acodec and acodec != 'none':
+                                            # Prefer progressive formats or formats that are explicitly complete
+                                            # Avoid DASH/manifest formats which are adaptive
+                                            if (vcodec and vcodec != 'none' and 
+                                                acodec and acodec != 'none' and
+                                                'dash' not in protocol and
+                                                'manifest' not in protocol):
                                                 complete_formats.append(fmt)
                                         
                                         if complete_formats:
@@ -185,6 +193,12 @@ with col2:
                                             # Use the best matching format
                                             selected = mp4_formats[0]
                                             ydl_opts['format'] = selected['format_id']
+                                            
+                                            # Show selected format details for debugging
+                                            st.info(f"📋 Selected format: {selected.get('format_id')} | "
+                                                  f"Resolution: {selected.get('resolution', 'N/A')} | "
+                                                  f"Video: {selected.get('vcodec', 'N/A')[:10]} | "
+                                                  f"Audio: {selected.get('acodec', 'N/A')[:10]}")
                                         else:
                                             # No complete formats available - this video needs FFmpeg
                                             st.error("❌ This video only has separate video and audio streams.")
@@ -322,18 +336,41 @@ with col2:
                             )
                             
                             # Display video info
-                            st.info(f"📹 **Title:** {title}\n⏱️ **Duration:** {duration // 60}:{duration % 60:02d}")
+                            file_size_mb = len(file_data) / (1024 * 1024)
+                            st.info(f"📹 **Title:** {title}\n⏱️ **Duration:** {duration // 60}:{duration % 60:02d}\n📦 **File Size:** {file_size_mb:.2f} MB")
                             if format_info_text:
                                 st.caption(f"ℹ️ {format_info_text}")
                             
-                            # Validation message
-                            if download_format == "Video (MP4)" and not has_ffmpeg:
-                                if vcodec == 'none' or acodec == 'none':
-                                    st.error("⚠️ WARNING: Downloaded file is missing video or audio track!")
-                                    st.info("This file may not play correctly. Please install FFmpeg for complete downloads.")
+                            # Detailed validation and diagnostics
+                            if download_format == "Video (MP4)":
+                                if vcodec != 'none' and acodec != 'none':
+                                    st.success(f"✅ File structure verified: Video ({vcodec.split('.')[0] if vcodec != 'unknown' else 'N/A'}) + Audio ({acodec.split('.')[0] if acodec != 'unknown' else 'N/A'})")
+                                    
+                                    # Check file size reasonableness
+                                    expected_size_mb_per_min = 10  # Rough estimate
+                                    expected_size = (duration / 60) * expected_size_mb_per_min
+                                    if file_size_mb < expected_size * 0.5:  # Less than 50% of expected
+                                        st.warning("⚠️ File size seems unusually small - download may be incomplete or corrupted")
                                 else:
-                                    st.success("✅ File verified: Contains both video and audio")
+                                    st.error("❌ CRITICAL: File is missing video or audio track!")
+                                    st.warning("🔧 **FFmpeg is REQUIRED** - this video needs stream merging")
+                                
+                                # Troubleshooting info
+                                with st.expander("🔧 Troubleshooting: File won't play?"):
+                                    st.markdown("""
+                                    **If the downloaded file won't play:**
+                                    1. **Try VLC Media Player** - it supports the widest range of codecs
+                                    2. **Check file extension** - Make sure it's `.mp4`
+                                    3. **File may be corrupted** - Try downloading again
+                                    4. **Install FFmpeg** - Most modern videos require FFmpeg to merge streams properly
+                                    
+                                    **Recommended solution:** Install FFmpeg for guaranteed playable downloads
+                                    """)
                             
+                            # Warning if we got multiple files
+                            if len(downloaded_files) > 1 and not has_ffmpeg:
+                                st.error("❌ Multiple files detected - video and audio are separate!")
+                                st.warning("🔧 **FFmpeg is REQUIRED** to merge them into one playable file.")
                         else:
                             st.error("❌ File not found after download")
                             
