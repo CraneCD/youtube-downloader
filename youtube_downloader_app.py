@@ -44,11 +44,11 @@ with st.sidebar:
     # Show ffmpeg status
     if has_ffmpeg:
         st.success("✅ FFmpeg is installed")
-        st.caption("MP3 conversion available")
+        st.caption("MP3 conversion & video merging available")
     else:
-        st.info("ℹ️ FFmpeg not found - app works without it!")
-        st.caption("Audio will download in original format (M4A/WebM)")
-        with st.expander("📥 Optional: Install FFmpeg for MP3 conversion"):
+        st.warning("⚠️ FFmpeg not found")
+        st.caption("Some videos require FFmpeg to merge streams")
+        with st.expander("📥 Install FFmpeg for full compatibility"):
             st.markdown("""
             **Windows:**
             1. Download from [ffmpeg.org](https://ffmpeg.org/download.html)
@@ -65,7 +65,7 @@ with st.sidebar:
             sudo apt install ffmpeg
             ```
             
-            Note: FFmpeg enables MP3 conversion. Without it, audio downloads in original format.
+            Note: Many modern YouTube videos require FFmpeg to merge video and audio streams.
             """)
     
     st.info(
@@ -139,22 +139,71 @@ with col2:
                         else:
                             # Video download options
                             if not has_ffmpeg:
-                                # For videos without FFmpeg, we need formats that are already complete
-                                # Use format selector that prioritizes formats with both video and audio in one file
-                                # The key: look for formats where both vcodec and acodec are NOT "none"
-                                # And prefer MP4 container
-                                quality_map = {
-                                    "Best": "best[ext=mp4]/best[ext=webm]/best",
-                                    "1080p": "best[height<=1080][ext=mp4]/best[height<=1080][ext=webm]/best[height<=1080]",
-                                    "720p": "best[height<=720][ext=mp4]/best[height<=720][ext=webm]/best[height<=720]",
-                                    "480p": "best[height<=480][ext=mp4]/best[height<=480][ext=webm]/best[height<=480]",
-                                    "360p": "best[height<=360][ext=mp4]/best[height<=360][ext=webm]/best[height<=360]",
-                                    "Worst": "worst[ext=mp4]/worst[ext=webm]/worst",
-                                }
-                                ydl_opts['format'] = quality_map.get(video_quality, "best[ext=mp4]/best")
-                                # CRITICAL: Don't merge - only download if format is already complete
+                                # First, inspect available formats and find ones with both video and audio
+                                ydl_check = yt_dlp.YoutubeDL({'quiet': True, 'no_warnings': True})
+                                with ydl_check:
+                                    try:
+                                        format_info = ydl_check.extract_info(url, download=False)
+                                        formats = format_info.get('formats', [])
+                                        
+                                        # Find formats that have BOTH video and audio codecs (complete files)
+                                        complete_formats = []
+                                        for fmt in formats:
+                                            vcodec = fmt.get('vcodec', 'none')
+                                            acodec = fmt.get('acodec', 'none')
+                                            # Must have both video AND audio (not "none")
+                                            if vcodec and vcodec != 'none' and acodec and acodec != 'none':
+                                                complete_formats.append(fmt)
+                                        
+                                        if complete_formats:
+                                            # Sort: prefer MP4, then by resolution
+                                            complete_formats.sort(key=lambda x: (
+                                                x.get('ext', '') != 'mp4',  # MP4 first
+                                                -x.get('height', 0) if x.get('height') else 0,  # Higher resolution first
+                                            ))
+                                            
+                                            # Filter by quality if specified
+                                            if video_quality not in ["Best", "Worst"]:
+                                                target_height = int(video_quality.replace('p', ''))
+                                                matching = [f for f in complete_formats 
+                                                          if f.get('height') and int(str(f.get('height')).replace('p', '')) <= target_height]
+                                                if matching:
+                                                    complete_formats = matching
+                                            
+                                            if video_quality == "Worst":
+                                                complete_formats.reverse()
+                                            
+                                            # Use the best matching format
+                                            selected = complete_formats[0]
+                                            ydl_opts['format'] = selected['format_id']
+                                        else:
+                                            # No complete formats available - this video needs FFmpeg
+                                            st.error("❌ This video only has separate video and audio streams.")
+                                            st.warning("🔧 **FFmpeg is REQUIRED** to merge them into a playable file.")
+                                            st.info("""
+                                            **Please install FFmpeg:**
+                                            - Windows: `winget install ffmpeg` or download from ffmpeg.org
+                                            - macOS: `brew install ffmpeg`
+                                            - Linux: `sudo apt install ffmpeg`
+                                            
+                                            Then restart the app and try again.
+                                            """)
+                                            st.stop()
+                                    except Exception as e:
+                                        st.warning(f"⚠️ Error checking formats: {str(e)}")
+                                        st.info("Using fallback format selection...")
+                                        # Fallback: try simple format selector
+                                        quality_map = {
+                                            "Best": "best[ext=mp4]/best",
+                                            "1080p": "best[height<=1080][ext=mp4]/best[height<=1080]",
+                                            "720p": "best[height<=720][ext=mp4]/best[height<=720]",
+                                            "480p": "best[height<=480][ext=mp4]/best[height<=480]",
+                                            "360p": "best[height<=360][ext=mp4]/best[height<=360]",
+                                            "Worst": "worst[ext=mp4]/worst",
+                                        }
+                                        ydl_opts['format'] = quality_map.get(video_quality, "best[ext=mp4]")
+                                
                                 ydl_opts['prefer_free_formats'] = False
-                                # Don't set merge_output_format - we want single file downloads only
                             else:
                                 # With ffmpeg, we can merge best video + best audio
                                 quality_map = {
@@ -195,12 +244,27 @@ with col2:
                         downloaded_files = [f for f in downloaded_files if not f.name.endswith('.part')]
                         
                         if downloaded_files:
-                            # If multiple files and no ffmpeg, we have a problem
-                            if len(downloaded_files) > 1 and not has_ffmpeg:
-                                st.error("❌ Multiple files downloaded - video requires merging. Please install FFmpeg or try a different video.")
+                            # Check if multiple files were downloaded (video + audio separate)
+                            if len(downloaded_files) > 1:
+                                st.error("❌ Multiple files downloaded - video and audio are separate!")
+                                st.warning("🔧 **FFmpeg is REQUIRED** to merge them into a playable file.")
+                                st.info("""
+                                **Please install FFmpeg and try again.**
+                                - Windows: `winget install ffmpeg`
+                                - macOS: `brew install ffmpeg`
+                                - Linux: `sudo apt install ffmpeg`
+                                """)
                                 st.stop()
                             
                             file_path = downloaded_files[0]
+                            
+                            # Validate file has both video and audio (if it's a video download)
+                            if download_format == "Video (MP4)":
+                                # Check if file is likely incomplete
+                                file_size = file_path.stat().st_size
+                                if file_size < 1024:  # Less than 1KB - probably broken
+                                    st.error("❌ Downloaded file is too small - download may have failed")
+                                    st.stop()
                             
                             # Read file
                             with open(file_path, 'rb') as f:
@@ -252,10 +316,14 @@ with col2:
                             if format_info_text:
                                 st.caption(f"ℹ️ {format_info_text}")
                             
-                            # Show warning if video might not play
+                            # Validation message
                             if download_format == "Video (MP4)" and not has_ffmpeg:
-                                if len(downloaded_files) == 1 and (vcodec == 'none' or acodec == 'none'):
-                                    st.warning("⚠️ Warning: Downloaded file may be incomplete (missing video or audio track). Some videos require FFmpeg.")
+                                if vcodec == 'none' or acodec == 'none':
+                                    st.error("⚠️ WARNING: Downloaded file is missing video or audio track!")
+                                    st.info("This file may not play correctly. Please install FFmpeg for complete downloads.")
+                                else:
+                                    st.success("✅ File verified: Contains both video and audio")
+                            
                         else:
                             st.error("❌ File not found after download")
                             
@@ -267,10 +335,10 @@ with col2:
                 if "ffmpeg" in error_msg.lower() or "ffprobe" in error_msg.lower():
                     st.warning("🔧 **FFmpeg error**")
                     st.info("""
-                    The app should work without FFmpeg for most videos. If you're seeing this error:
-                    1. Make sure you're using the latest version of yt-dlp
-                    2. Try downloading again - it should automatically use formats that don't require FFmpeg
-                    3. Check the sidebar for optional FFmpeg installation
+                    FFmpeg is required for this video. Please install it:
+                    - Windows: `winget install ffmpeg`
+                    - macOS: `brew install ffmpeg`
+                    - Linux: `sudo apt install ffmpeg`
                     """)
                 elif "format" in error_msg.lower() or "no video" in error_msg.lower():
                     st.warning("⚠️ **Format selection error**")
