@@ -11,14 +11,53 @@ A simple and user-friendly YouTube downloader built with Streamlit and yt-dlp.
 
 ## Installation
 
-### Local Installation
+### Quick Start - Run Locally (Windows)
 
-1. Install Python dependencies:
+**Easiest way:**
+1. Double-click `run_local.bat` - it will set everything up automatically!
+
+Or run in PowerShell:
+```powershell
+.\run_local.ps1
+```
+
+The script will:
+- ✅ Check Python installation
+- ✅ Create a virtual environment (if needed)
+- ✅ Install all dependencies
+- ✅ Launch the app in your browser
+
+### Manual Local Installation
+
+1. **Install Python** (if not already installed):
+   - Download from [python.org](https://www.python.org/downloads/)
+   - Make sure to check "Add Python to PATH" during installation
+
+2. **Create a virtual environment** (recommended):
+```bash
+python -m venv venv
+```
+
+3. **Activate the virtual environment**:
+   - **Windows (Command Prompt):**
+     ```bash
+     venv\Scripts\activate
+     ```
+   - **Windows (PowerShell):**
+     ```powershell
+     venv\Scripts\Activate.ps1
+     ```
+   - **macOS/Linux:**
+     ```bash
+     source venv/bin/activate
+     ```
+
+4. **Install Python dependencies**:
 ```bash
 pip install -r requirements.txt
 ```
 
-2. **Install FFmpeg** (Required for most videos):
+5. **Install FFmpeg** (Required for most videos):
 
    **Windows:**
    - Option 1 (Recommended): Use winget
@@ -46,10 +85,27 @@ pip install -r requirements.txt
    ffmpeg -version
    ```
 
-3. Run the Streamlit app:
+6. **Run the Streamlit app**:
 ```bash
 streamlit run youtube_downloader_app.py
 ```
+
+The app will automatically open in your browser at `http://localhost:8501`
+
+### Troubleshooting Local Setup
+
+**Python not found:**
+- Make sure Python is installed and added to PATH
+- Try `python --version` in your terminal to verify
+
+**Virtual environment issues (PowerShell):**
+If you get execution policy errors, run:
+```powershell
+Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
+```
+
+**Port already in use:**
+If port 8501 is busy, Streamlit will use the next available port (8502, 8503, etc.)
 
 ### Streamlit Cloud Deployment
 
