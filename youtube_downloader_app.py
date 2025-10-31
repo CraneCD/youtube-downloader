@@ -27,7 +27,7 @@ with st.sidebar:
     
     download_format = st.radio(
         "Select format:",
-        ["Video (MP4)", "Audio only (MP3)"],
+        ["Video (MP4)", "Audio only"],
         index=0
     )
     
@@ -44,9 +44,11 @@ with st.sidebar:
     # Show ffmpeg status
     if has_ffmpeg:
         st.success("✅ FFmpeg is installed")
+        st.caption("MP3 conversion available")
     else:
-        st.warning("⚠️ FFmpeg not found")
-        with st.expander("📥 How to install FFmpeg"):
+        st.info("ℹ️ FFmpeg not found - app works without it!")
+        st.caption("Audio will download in original format (M4A/WebM)")
+        with st.expander("📥 Optional: Install FFmpeg for MP3 conversion"):
             st.markdown("""
             **Windows:**
             1. Download from [ffmpeg.org](https://ffmpeg.org/download.html)
@@ -63,7 +65,7 @@ with st.sidebar:
             sudo apt install ffmpeg
             ```
             
-            Note: Audio downloads (MP3) require FFmpeg.
+            Note: FFmpeg enables MP3 conversion. Without it, audio downloads in original format.
             """)
     
     st.info(
@@ -117,15 +119,23 @@ with col2:
                             'quiet': False,
                         }
                         
-                        if download_format == "Audio only (MP3)":
-                            ydl_opts.update({
-                                'format': 'bestaudio/best',
-                                'postprocessors': [{
-                                    'key': 'FFmpegExtractAudio',
-                                    'preferredcodec': 'mp3',
-                                    'preferredquality': '192',
-                                }],
-                            })
+                        if download_format == "Audio only":
+                            # Download best audio format available
+                            if has_ffmpeg:
+                                # With FFmpeg, we can convert to MP3
+                                ydl_opts.update({
+                                    'format': 'bestaudio/best',
+                                    'postprocessors': [{
+                                        'key': 'FFmpegExtractAudio',
+                                        'preferredcodec': 'mp3',
+                                        'preferredquality': '192',
+                                    }],
+                                })
+                            else:
+                                # Without FFmpeg, download in native format (m4a, webm, opus, etc.)
+                                ydl_opts.update({
+                                    'format': 'bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio/best',
+                                })
                         else:
                             # Video download options
                             # If ffmpeg is not available, use single-file formats that don't require merging
@@ -169,18 +179,34 @@ with col2:
                             with open(file_path, 'rb') as f:
                                 file_data = f.read()
                             
-                            # Determine MIME type and extension
-                            if download_format == "Audio only (MP3)":
-                                mime_type = "audio/mpeg"
-                                extension = "mp3"
+                            # Determine MIME type and extension from actual file
+                            file_ext = file_path.suffix.lower()
+                            if download_format == "Audio only":
+                                # Determine MIME type based on actual file extension
+                                audio_mime_map = {
+                                    '.mp3': 'audio/mpeg',
+                                    '.m4a': 'audio/mp4',
+                                    '.webm': 'audio/webm',
+                                    '.opus': 'audio/ogg',
+                                    '.ogg': 'audio/ogg',
+                                }
+                                mime_type = audio_mime_map.get(file_ext, 'audio/mpeg')
+                                extension = file_ext.lstrip('.') or 'mp3'
                             else:
                                 mime_type = "video/mp4"
-                                extension = "mp4"
+                                extension = file_ext.lstrip('.') or 'mp4'
                             
                             # Provide download button
+                            if download_format == "Audio only":
+                                format_label = f"Audio ({extension.upper()})"
+                                if has_ffmpeg and extension == 'mp3':
+                                    format_label = "Audio (MP3)"
+                            else:
+                                format_label = "Video"
+                            
                             st.success("✅ Download complete!")
                             st.download_button(
-                                label=f"⬇️ Download {download_format}",
+                                label=f"⬇️ Download {format_label}",
                                 data=file_data,
                                 file_name=f"{title[:50]}.{extension}",
                                 mime=mime_type,
@@ -198,23 +224,13 @@ with col2:
                 
                 # Provide helpful error messages for common issues
                 if "ffmpeg" in error_msg.lower() or "ffprobe" in error_msg.lower():
-                    st.warning("🔧 **FFmpeg is required for this download**")
-                    if download_format == "Audio only (MP3)":
-                        st.info("""
-                        **To fix this:**
-                        1. Install FFmpeg on your system
-                        2. Add FFmpeg to your system PATH
-                        3. Restart the Streamlit app
-                        
-                        See the sidebar for installation instructions.
-                        """)
-                    else:
-                        st.info("""
-                        **To fix this:**
-                        1. Install FFmpeg for better quality options
-                        2. Or the app will try to download in formats that don't require FFmpeg
-                        3. Check the sidebar for installation instructions
-                        """)
+                    st.warning("🔧 **An unexpected FFmpeg error occurred**")
+                    st.info("""
+                    The app should work without FFmpeg. If you're seeing this error:
+                    1. Make sure you're using the latest version of the app
+                    2. Try downloading again - it should automatically use formats that don't require FFmpeg
+                    3. Check the sidebar for optional FFmpeg installation (only needed for MP3 conversion)
+                    """)
                 else:
                     st.info("💡 Tip: Make sure the URL is valid and the video is accessible")
         else:
@@ -239,4 +255,3 @@ st.markdown(
     "</div>",
     unsafe_allow_html=True
 )
-
